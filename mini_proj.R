@@ -1,5 +1,6 @@
 library(keras)
 library(tensorflow)
+tensorflow::set_random_seed(1337)
 
 train_dir <- "C:/Users/erikl_xzy542i/Documents/Master_local/T3/MachineLearning/pneumonia/chest_xray/train"
 val_dir <- "C:/Users/erikl_xzy542i/Documents/Master_local/T3/MachineLearning/pneumonia/chest_xray/val"
@@ -7,12 +8,14 @@ test_dir <- "C:/Users/erikl_xzy542i/Documents/Master_local/T3/MachineLearning/pn
 
 # Data generators
 train_datagen <- image_data_generator(
-  rescale = 1/255,          # Normalize pixel values (0-1)
-  rotation_range = 20,      # Augment: Randomly rotate images
-  width_shift_range = 0.2,  # Augment: Horizontal shifts
-  height_shift_range = 0.2, # Augment: Vertical shifts
-  zoom_range = 0.2,         # Augment: Random zoom
-  horizontal_flip = TRUE    # Augment: Horizontal flips
+  rescale = 1/255,
+  rotation_range = 40,
+  width_shift_range = 0.2,
+  height_shift_range = 0.2,
+  shear_range = 0.2,
+  zoom_range = 0.2,
+  horizontal_flip = TRUE,
+  fill_mode = 'nearest'
 )
 
 val_test_datagen <- image_data_generator(
@@ -23,7 +26,7 @@ val_test_datagen <- image_data_generator(
 train_generator <- flow_images_from_directory(
   train_dir,
   generator = train_datagen,
-  target_size = c(224, 224),  # Resize images to match model input size
+  target_size = c(128, 128),  # Resize images to match model input size
   batch_size = 32,           # Number of images per batch
   class_mode = "binary"      # Binary classification (normal vs pneumonia)
 )
@@ -32,7 +35,7 @@ train_generator <- flow_images_from_directory(
 val_generator <- flow_images_from_directory(
   val_dir,
   generator = val_test_datagen,
-  target_size = c(224, 224),
+  target_size = c(128, 128),
   batch_size = 16,
   class_mode = "binary"
 )
@@ -41,7 +44,7 @@ val_generator <- flow_images_from_directory(
 test_generator <- flow_images_from_directory(
   test_dir,
   generator = val_test_datagen,
-  target_size = c(224, 224),
+  target_size = c(128, 128),
   batch_size = 32,
   class_mode = "binary",
   shuffle = FALSE            # Do not shuffle for testing (to align predictions with labels)
@@ -68,7 +71,7 @@ par(mfrow=c(1,1))
 # Basic CNN as our first model
 model <- keras_model_sequential() %>%
   # Convolutional layer 1
-  layer_conv_2d(filters = 32, kernel_size = c(3, 3), activation = "relu", input_shape = c(224, 224, 3)) %>%
+  layer_conv_2d(filters = 32, kernel_size = c(3, 3), activation = "relu", input_shape = c(128, 128, 3)) %>%
   layer_max_pooling_2d(pool_size = c(2, 2)) %>%
   layer_dropout(rate = 0.2)%>%
   
@@ -112,3 +115,54 @@ results <- model %>% evaluate(
 
 print(results)
 
+
+################################################################################
+#############################   Transfer models   ##############################
+################################################################################
+
+
+# Load the pre-trained ResNet50 model without the top classification layer
+base_model <- application_densenet121(
+  weights = "imagenet",  # Pre-trained on ImageNet
+  include_top = FALSE,   # Exclude the fully connected layer at the top
+  input_shape = c(128, 128, 3)
+)
+
+# Freeze the layers of the base model to avoid retraining them
+# Unfreeze some layers of the base model for fine-tuning
+freeze_weights(base_model)  # Freeze the initial layers
+
+# Add your own top layers
+model <- keras_model_sequential() %>%
+  base_model %>%
+  layer_flatten() %>%
+  layer_dense(units = 256, activation = 'relu', kernel_regularizer = regularizer_l2(0.01)) %>%
+  layer_dropout(0.5) %>%
+  layer_dense(units = 1, activation = 'sigmoid')  # For binary classification (pneumonia vs non-pneumonia)
+
+# Compile the model
+model %>% compile( optimizer_adam(learning_rate = 1e-5), loss = 'binary_crossentropy', metrics = c('accuracy'))
+
+callback_early_stop <- callback_early_stopping(
+  monitor = "val_loss",
+  patience = 5,  # Stop after 5 epochs with no improvement
+  restore_best_weights = TRUE
+)
+
+model$trainable <- TRUE
+# Fine-tune the model
+history_fine <- model %>% fit(
+  train_generator,
+  steps_per_epoch = train_generator$samples %/% train_generator$batch_size,
+  epochs = 30,
+  validation_data = val_generator,
+  validation_steps = val_generator$samples %/% val_generator$batch_size,
+  callbacks = list(callback_early_stop)
+)
+plot(history_fine)
+
+results <- model %>% evaluate(
+  test_generator,
+  steps = as.integer(test_generator$samples / test_generator$batch_size)
+)
+print(results)
