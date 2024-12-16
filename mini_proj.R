@@ -89,7 +89,7 @@ model <- keras_model_sequential() %>%
   layer_flatten() %>%
   layer_dense(units = 128, activation = "relu") %>%
   layer_dropout(rate = 0.5) %>% 
-  layer_dense(units = 1, activation = "sigmoid") # Output layer for binary classification
+  layer_dense(units = 1, activation = "sigmoid") 
 
 
 model %>% compile(
@@ -120,37 +120,38 @@ print(results)
 #############################   Transfer models   ##############################
 ################################################################################
 
-
-# Load the pre-trained ResNet50 model without the top classification layer
+# We use the pre trained model densenet 121
 base_model <- application_densenet121(
-  weights = "imagenet",  # Pre-trained on ImageNet
-  include_top = FALSE,   # Exclude the fully connected layer at the top
+  weights = "imagenet",  
+  include_top = FALSE,  
   input_shape = c(128, 128, 3)
 )
 
-# Freeze the layers of the base model to avoid retraining them
-# Unfreeze some layers of the base model for fine-tuning
-freeze_weights(base_model)  # Freeze the initial layers
+# Freeze layers of the pre trained model
+freeze_weights(base_model)
 
-# Add your own top layers
+# Add top layers
 model <- keras_model_sequential() %>%
   base_model %>%
   layer_flatten() %>%
   layer_dense(units = 256, activation = 'relu', kernel_regularizer = regularizer_l2(0.01)) %>%
   layer_dropout(0.5) %>%
-  layer_dense(units = 1, activation = 'sigmoid')  # For binary classification (pneumonia vs non-pneumonia)
+  layer_dense(units = 1, activation = 'sigmoid')  
 
-# Compile the model
+
 model %>% compile( optimizer_adam(learning_rate = 1e-5), loss = 'binary_crossentropy', metrics = c('accuracy'))
 
+# Early stopping scheme
 callback_early_stop <- callback_early_stopping(
   monitor = "val_loss",
-  patience = 5,  # Stop after 5 epochs with no improvement
+  patience = 5,
   restore_best_weights = TRUE
 )
 
+# Unfreeze trainable layers
 model$trainable <- TRUE
-# Fine-tune the model
+
+# Fine-tune the model to data
 history_fine <- model %>% fit(
   train_generator,
   steps_per_epoch = train_generator$samples %/% train_generator$batch_size,
@@ -161,6 +162,7 @@ history_fine <- model %>% fit(
 )
 plot(history_fine)
 
+# Evaluate against test data
 results <- model %>% evaluate(
   test_generator,
   steps = as.integer(test_generator$samples / test_generator$batch_size)
