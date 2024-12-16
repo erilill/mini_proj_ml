@@ -107,6 +107,7 @@ history <- model %>% fit(
   validation_steps = as.integer(val_generator$samples / val_generator$batch_size)
 )
 
+plot(history)
 
 results <- model %>% evaluate(
   test_generator,
