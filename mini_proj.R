@@ -6,7 +6,6 @@ tensorflow::set_random_seed(1337)  # TensorFlow seed
 Sys.setenv("PYTHONHASHSEED" = 1337)  # Python hash seed
 
 train_dir <- "C:/Users/erikl_xzy542i/Documents/Master_local/T3/MachineLearning/pneumonia/chest_xray/train"
-val_dir <- "C:/Users/erikl_xzy542i/Documents/Master_local/T3/MachineLearning/pneumonia/chest_xray/val"
 test_dir <- "C:/Users/erikl_xzy542i/Documents/Master_local/T3/MachineLearning/pneumonia/chest_xray/test"
 
 # Data generators
@@ -18,11 +17,13 @@ train_datagen <- image_data_generator(
   shear_range = 0.2,
   zoom_range = 0.2,
   horizontal_flip = TRUE,
-  fill_mode = 'nearest'
+  fill_mode = 'nearest',
+  validation_split = 0.2
 )
 
 val_test_datagen <- image_data_generator(
-  rescale = 1/255
+  rescale = 1/255,
+  validation_split = 0.2
 )
 
 # Training generator
@@ -31,17 +32,23 @@ train_generator <- flow_images_from_directory(
   generator = train_datagen,
   target_size = c(128, 128), 
   batch_size = 32,           
-  class_mode = "binary"      
+  class_mode = "binary",
+  subset = "training"
 )
 
 # Validation generator
 val_generator <- flow_images_from_directory(
-  val_dir,
+  train_dir,
   generator = val_test_datagen,
   target_size = c(128, 128),
   batch_size = 16,
-  class_mode = "binary"
+  class_mode = "binary",
+  shuffle = FALSE,
+  subset = "validation"
 )
+
+# Check for overlap between train and validation sets
+intersect(train_generator$filepaths, val_generator$filepaths) # If 0, no overlap
 
 # Test generator
 test_generator <- flow_images_from_directory(
@@ -50,7 +57,7 @@ test_generator <- flow_images_from_directory(
   target_size = c(128, 128),
   batch_size = 32,
   class_mode = "binary",
-  shuffle = FALSE      
+  shuffle = FALSE
 )
 
 
@@ -116,6 +123,7 @@ history <- model %>% fit(
   validation_steps = as.integer(val_generator$samples / val_generator$batch_size),
   callbacks = list(callback_early_stop)
 )
+
 plot(history)
 tail(history$metrics$val_loss,1)
 tail(history$metrics$val_accuracy,1)
@@ -177,8 +185,62 @@ tail(history_fine$metrics$val_loss,1)
 tail(history_fine$metrics$val_accuracy,1)
 
 # Evaluate against test data
-results <- model2 %>% evaluate(
+results2 <- model2 %>% evaluate(
   test_generator,
   steps = as.integer(test_generator$samples / test_generator$batch_size)
 )
-print(results)
+print(results2)
+
+
+################################################################################
+# We use the pre trained model VGG16
+base_model2 <- application_vgg16(
+  weights = "imagenet",  
+  include_top = FALSE,  
+  input_shape = c(128, 128, 3)
+)
+
+# Freeze layers of the pre trained model
+freeze_weights(base_model2)
+
+# Add top layers
+model3 <- keras_model_sequential() %>%
+  base_model2 %>%
+  layer_flatten() %>%
+  layer_dense(units = 512, activation = 'relu', kernel_regularizer = regularizer_l2(0.01)) %>%
+  layer_dropout(0.5) %>%
+  layer_dense(units = 1, activation = 'sigmoid')  
+
+
+model3 %>% compile(optimizer_adam(learning_rate = 1e-5), loss = 'binary_crossentropy', metrics = c('accuracy'))
+
+# Early stopping scheme
+callback_early_stop <- callback_early_stopping(
+  monitor = "val_loss",
+  patience = 5,
+  restore_best_weights = TRUE
+)
+
+# Unfreeze trainable layers
+model3$trainable <- TRUE
+
+# Fine-tune the model to data
+history_fine2 <- model3 %>% fit(
+  train_generator,
+  steps_per_epoch = train_generator$samples %/% train_generator$batch_size,
+  epochs = 50,
+  validation_data = val_generator,
+  validation_steps = val_generator$samples %/% val_generator$batch_size,
+  callbacks = list(callback_early_stop)
+)
+plot(history_fine2)
+tail(history_fine2$metrics$val_loss,1)
+tail(history_fine2$metrics$val_accuracy,1)
+
+# Evaluate against test data
+results3 <- model3 %>% evaluate(
+  test_generator,
+  steps = as.integer(test_generator$samples / test_generator$batch_size)
+)
+print(results3)
+
