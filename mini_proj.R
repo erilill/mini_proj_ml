@@ -1,10 +1,18 @@
+# Authors: Erik Lillrank, Mark Becker & Felix Andersson
+
+# Load libraries
 library(keras)
 library(tensorflow)
+library(yardstick)
 
+# Set seed
 set.seed(1337)  # R seed
 tensorflow::set_random_seed(1337)  # TensorFlow seed
 Sys.setenv("PYTHONHASHSEED" = 1337)  # Python hash seed
 
+# Set the directories for the data
+# Data is available at: https://www.kaggle.com/datasets/paultimothymooney/chest-xray-pneumonia
+# Note that we have moved the images from the validation set to the training set
 train_dir <- "C:/Users/erikl_xzy542i/Documents/Master_local/T3/MachineLearning/pneumonia/chest_xray/train"
 test_dir <- "C:/Users/erikl_xzy542i/Documents/Master_local/T3/MachineLearning/pneumonia/chest_xray/test"
 
@@ -55,7 +63,7 @@ test_generator <- flow_images_from_directory(
   test_dir,
   generator = val_test_datagen,
   target_size = c(128, 128),
-  batch_size = 32,
+  batch_size = 8,
   class_mode = "binary",
   shuffle = FALSE
 )
@@ -128,18 +136,11 @@ plot(history)
 tail(history$metrics$val_loss,1)
 tail(history$metrics$val_accuracy,1)
 
-results <- model %>% evaluate(
-  test_generator,
-  steps = as.integer(test_generator$samples / test_generator$batch_size)
-)
-
-print(results)
-
-
 ################################################################################
 #############################   Transfer models   ##############################
 ################################################################################
 
+################################  densenet121  #################################
 # We use the pre trained model densenet 121
 base_model <- application_densenet121(
   weights = "imagenet",  
@@ -184,15 +185,8 @@ plot(history_fine)
 tail(history_fine$metrics$val_loss,1)
 tail(history_fine$metrics$val_accuracy,1)
 
-# Evaluate against test data
-results2 <- model2 %>% evaluate(
-  test_generator,
-  steps = as.integer(test_generator$samples / test_generator$batch_size)
-)
-print(results2)
 
-
-################################################################################
+##################################  VGG16  #####################################
 # We use the pre trained model VGG16
 base_model2 <- application_vgg16(
   weights = "imagenet",  
@@ -237,10 +231,109 @@ plot(history_fine2)
 tail(history_fine2$metrics$val_loss,1)
 tail(history_fine2$metrics$val_accuracy,1)
 
-# Evaluate against test data
-results3 <- model3 %>% evaluate(
-  test_generator,
-  steps = as.integer(test_generator$samples / test_generator$batch_size)
-)
-print(results3)
 
+################################################################################
+############################   Model Evaluation   ##############################
+################################################################################
+
+# Here we compute accuracy, confusion matrices, AUC, etc. on the test data
+
+# True labels in the test set
+true_labels <- factor(test_generator$classes)
+true_labels_df <- data.frame(truth = factor(true_labels))
+
+################################  Model 1  #####################################
+
+# Make predictions on the test data
+predictions <- model %>% predict(test_generator, steps = as.integer(test_generator$samples / test_generator$batch_size))
+predicted_classes <- factor(ifelse(predictions > 0.5, 1, 0))
+
+results_df <- data.frame(truth = true_labels, pred = predicted_classes)
+results_df_prob <- data.frame(truth = true_labels, pred = predictions)
+
+# 1. Compute Accuracy
+acc <- accuracy(results_df, truth, pred, event_level = "second")
+print(acc)
+
+# 2. Compute AUC
+auc_result <- roc_auc(results_df_prob, truth, pred, event_level = "second")
+print(auc_result)
+
+# 3. Compute Precision
+precision_result <- precision(results_df, truth, pred, event_level = "second")
+print(precision_result)
+
+# 4. Compute Recall (Sensitivity)
+recall_result <- recall(results_df, truth, pred, event_level = "second")
+print(recall_result)
+
+# 5. Compute F1-Score
+f1_result <- f_meas(results_df, truth, pred, event_level = "second")
+print(f1_result)
+
+################################  Model 2  #####################################
+
+# Make predictions on the test data
+predictions2 <- model2 %>% predict(test_generator, steps = as.integer(test_generator$samples / test_generator$batch_size))
+predicted_classes2 <- factor(ifelse(predictions2 > 0.5, 1, 0))
+
+results_df2 <- data.frame(truth = true_labels, pred = predicted_classes2)
+results_df_prob2 <- data.frame(truth = true_labels, pred = predictions2)
+
+# 1. Compute Accuracy
+acc2 <- accuracy(results_df2, truth, pred, event_level = "second")
+print(acc2)
+
+# 2. Compute AUC
+auc_result2 <- roc_auc(results_df_prob2, truth, pred, event_level = "second")
+print(auc_result2)
+
+# 3. Compute Precision
+precision_result2 <- precision(results_df2, truth, pred, event_level = "second")
+print(precision_result2)
+
+# 4. Compute Recall (Sensitivity)
+recall_result2 <- recall(results_df2, truth, pred, event_level = "second")
+print(recall_result2)
+
+# 5. Compute F1-Score
+f1_result2 <- f_meas(results_df2, truth, pred, event_level = "second")
+print(f1_result2)
+
+################################  Model 3  #####################################
+
+# Make predictions on the test data
+predictions3 <- model3 %>% predict(test_generator, steps = as.integer(test_generator$samples / test_generator$batch_size))
+predicted_classes3 <- factor(ifelse(predictions3 > 0.5, 1, 0))
+
+results_df3 <- data.frame(truth = true_labels, pred = predicted_classes3)
+results_df_prob3 <- data.frame(truth = true_labels, pred = predictions3)
+
+# 1. Compute Accuracy
+acc3 <- accuracy(results_df3, truth, pred, event_level = "second")
+print(acc3)
+
+# 2. Compute AUC
+auc_result3 <- roc_auc(results_df_prob3, truth, pred, event_level = "second")
+print(auc_result3)
+
+# 3. Compute Precision
+precision_result3 <- precision(results_df3, truth, pred, event_level = "second")
+print(precision_result3)
+
+# 4. Compute Recall (Sensitivity)
+recall_result3 <- recall(results_df3, truth, pred, event_level = "second")
+print(recall_result3)
+
+# 5. Compute F1-Score
+f1_result3 <- f_meas(results_df3, truth, pred, event_level = "second")
+print(f1_result3)
+
+################################################################################
+########################   Save models for plotting   ##########################
+################################################################################
+
+# We save the models in HDF5 format and then use Netron to do the visualization
+model %>% save_model_hdf5("model.h5")
+model2 %>% save_model_hdf5("model2.h5")
+model3 %>% save_model_hdf5("model3.h5")
